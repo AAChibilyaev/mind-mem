@@ -354,9 +354,118 @@ def validate_proposal(proposal):
 # ═══════════════════════════════════════════════
 
 
+#: How a dimension's verdict ranks when its issue count is unavailable.
+#: ``PASS``/``SKIP`` are both "nothing to answer for"; ``FAIL`` is a corpus
+#: that has findings; ``ERROR`` means the check produced no verdict at all,
+#: which is strictly worse than a verdict of "failing" because it cannot be
+#: compared against anything. ``MISSING`` is a dimension the report never
+#: mentioned — what a caller that stubs ``check_preconditions`` produces.
+_VERDICT_SEVERITY: dict[str, int] = {
+    "PASS": 0,
+    "SKIP": 0,
+    "FAIL": 1,
+    "ERROR": 2,
+    "MISSING": 2,
+}
+
+#: Verdicts that mean "no baseline exists", so no comparison can be made.
+#: ``MISSING`` is deliberately absent: a report that does not mention a
+#: dimension is a caller saying it does not care about it, not a check that
+#: broke. Every stub in the test suite returns exactly that shape.
+_UNMEASURABLE_VERDICTS: frozenset[str] = frozenset({"ERROR"})
+
+#: The dimensions :func:`check_preconditions` reports, each with the noun its
+#: TOTAL line counts. ``_measure_preconditions`` reads the counts back out of
+#: the report so a caller can compare two runs without re-parsing by hand.
+_PRECONDITION_DIMENSIONS: tuple[tuple[str, str], ...] = (
+    ("validate", "issues"),
+    ("intel_scan", "critical"),
+)
+
+
+def _measure_preconditions(report) -> dict[str, tuple[str, Optional[int]]]:
+    """Per-dimension ``(verdict, count)`` read back out of a *report*.
+
+    The report lines are the engine's own audit trail — they are written to
+    the receipt and printed to the operator — so they are also the honest
+    place to read the measurement from, rather than threading a parallel
+    structure through a function fifteen test files patch by name.
+
+    A count of ``None`` means the line carried no TOTAL, which is what a
+    stubbed report and a crashed checker both look like; the verdict tells
+    those two apart.
+    """
+    measured: dict[str, tuple[str, Optional[int]]] = {name: ("MISSING", None) for name, _ in _PRECONDITION_DIMENSIONS}
+    for line in report:
+        for name, noun in _PRECONDITION_DIMENSIONS:
+            prefix = f"{name}: "
+            if not line.startswith(prefix):
+                continue
+            rest = line[len(prefix) :]
+            verdict = rest.split(" ", 1)[0].split("(", 1)[0].strip()
+            if verdict not in _VERDICT_SEVERITY:
+                verdict = "MISSING"
+            found = re.search(rf"(\d+)\s+{noun}\b", rest)
+            measured[name] = (verdict, int(found.group(1)) if found else None)
+    return measured
+
+
+def _precondition_regressions(before, after) -> list[str]:
+    """Dimensions where *after* is measurably worse than *before*.
+
+    This is the post-apply question, and it is not "is the corpus clean".
+    A repair legitimately starts from a corpus the validator already fails
+    — that is what a repair is for — so demanding zero issues afterwards
+    made the defect a repair targets the very thing that refused it.
+
+    Worse means one of three things, checked in that order:
+
+    1. both runs reported a count and it went up — a new finding;
+    2. the count was known before and is not known now — the apply cost us
+       the ability to tell, which we treat as a regression rather than
+       assume the best;
+    3. neither count is known, but the verdict got worse (``PASS`` →
+       ``FAIL``/``ERROR``) — the only signal a countless report carries.
+
+    Equal counts are not a regression even when both are non-zero, which is
+    the whole point: findings that were there before the apply are not the
+    apply's to answer for.
+    """
+    worse: list[str] = []
+    for name, noun in _PRECONDITION_DIMENSIONS:
+        pre_verdict, pre_count = before.get(name, ("MISSING", None))
+        post_verdict, post_count = after.get(name, ("MISSING", None))
+        if pre_count is not None and post_count is not None:
+            if post_count > pre_count:
+                worse.append(f"{name}: {pre_count} -> {post_count} {noun}")
+            continue
+        if pre_count is not None and post_count is None:
+            worse.append(f"{name}: {pre_count} {noun} -> no count reported ({post_verdict})")
+            continue
+        if _VERDICT_SEVERITY.get(post_verdict, 2) > _VERDICT_SEVERITY.get(pre_verdict, 2):
+            worse.append(f"{name}: {pre_verdict} -> {post_verdict}")
+    return worse
+
+
 def check_preconditions(ws):
-    """Run validate.sh and intel_scan.py. Returns (ok, report)."""
+    """Measure the corpus: run the validator and the intel scan.
+
+    Returns ``(ok, report)`` where ``ok`` means *clean* — no findings in
+    either dimension. Callers on the apply path must not read ``ok`` as
+    permission: a corpus with pre-existing findings is the normal input to
+    a repair, and refusing it deadlocked every ``lint_autofix`` repair
+    (see :func:`_precondition_regressions`). ``ok`` is the right question
+    for an advisory check, such as the one after a rollback.
+
+    Both dimensions always run and both always appear in the report. This
+    used to return the moment the validator found anything, so the intel
+    scan never ran on a failing corpus — harmless while such a corpus was
+    refused outright, but a hole the moment applies are allowed to proceed
+    from one, because a new critical finding would have had nothing to be
+    compared against.
+    """
     report = []
+    ok = True
     # Use scripts from our own installation directory, not from the workspace
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _pkg_root = os.path.dirname(os.path.dirname(_script_dir))
@@ -416,10 +525,10 @@ def check_preconditions(ws):
             why += " | stdout: " + (" / ".join(out[:4]) if out else "(completely empty)")
             why += f" | rc={result.returncode}"
             report.append(f"validate: FAIL ({why})")
-            return False, report
+            ok = False
     except Exception as e:
         report.append(f"validate: ERROR ({e})")
-        return False, report
+        ok = False
 
     # P3: intel_scan, run as a module (from installation, not workspace).
     #
@@ -436,7 +545,7 @@ def check_preconditions(ws):
         intel_scan_spec = None
     if intel_scan_spec is None:
         report.append("intel_scan: SKIP (module not importable)")
-        return True, report
+        return ok, report
     try:
         result = subprocess.run(  # nosec B603 — fixed argument list using sys.executable; no user input in args; shell=False (default)
             [sys.executable, "-m", "mind_mem.intel_scan", ws],
@@ -461,12 +570,12 @@ def check_preconditions(ws):
                 stderr_lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
                 detail = stderr_lines[-1] if stderr_lines else f"exit code {result.returncode}"
             report.append(f"intel_scan: FAIL ({detail})")
-            return False, report
+            ok = False
     except Exception as e:
         report.append(f"intel_scan: ERROR ({e})")
-        return False, report
+        ok = False
 
-    return True, report
+    return ok, report
 
 
 # ═══════════════════════════════════════════════
@@ -1864,19 +1973,28 @@ def _apply_proposal_locked(ws, proposal, proposal_id, source_file, lock):
 
     # 5. Check preconditions (may run validate.sh + intel_scan.py which write reports)
     print("\n--- Precondition Checks ---")
-    ok, pre_report = check_preconditions(ws)
+    pre_ok, pre_report = check_preconditions(ws)
     for r in pre_report:
         print(f"  {r}")
-    if not ok:
-        print("PRECONDITIONS FAILED — rolling back.")
+    # The baseline, not a verdict. Pre-existing findings are not this
+    # proposal's to answer for — a repair's whole purpose is to start from a
+    # corpus that fails — so the only pre-apply refusal left is a corpus we
+    # could not measure at all, because then the post-check below would have
+    # nothing to compare against and a new defect would land unnoticed.
+    pre_measure = _measure_preconditions(pre_report)
+    unmeasurable = [f"{name}: {verdict}" for name, (verdict, _) in pre_measure.items() if verdict in _UNMEASURABLE_VERDICTS]
+    if unmeasurable:
+        print("PRECONDITIONS UNMEASURABLE — rolling back.")
         restore_snapshot(ws, snap_dir)
         _cleanup_orphan_files(ws, pre_apply_files)
         # Name the failing check. "Precondition check failed" identifies nothing:
         # the report lines are printed to stdout, which a caller capturing only
         # the return value never sees, and a CI failure then says an apply was
         # refused without saying by what. The report is short and already built.
-        detail = "; ".join(r for r in pre_report if "FAIL" in r or "SKIP" in r) or "; ".join(pre_report)
+        detail = "; ".join(r for r in pre_report if "ERROR" in r) or "; ".join(unmeasurable)
         return False, f"Precondition check failed: {detail}" if detail else "Precondition check failed"
+    if not pre_ok:
+        print("  (corpus has pre-existing findings; the post-check below asks only whether this apply added any)")
 
     receipt_path = write_receipt(snap_dir, proposal, ts, pre_report)
     print(f"  Receipt: {receipt_path}")
@@ -1964,11 +2082,16 @@ def _apply_proposal_locked(ws, proposal, proposal_id, source_file, lock):
             # shape structurally, so the next branch added here cannot quietly
             # put a rollback back outside the scope.
             print("\n--- Post-checks ---")
-            ok, post_report = check_preconditions(ws)
+            post_ok, post_report = check_preconditions(ws)
             for r in post_report:
                 print(f"  {r}")
+            # Did THIS apply make the corpus worse? Not "is the corpus clean".
+            regressions = _precondition_regressions(pre_measure, _measure_preconditions(post_report))
+            if not post_ok and not regressions:
+                print("  Findings carried over from before the apply; none introduced by it.")
 
-            if not ok:
+            if regressions:
+                print("  Regressed: " + "; ".join(regressions))
                 print("\nPOST-CHECKS FAILED — rolling back.")
                 print(
                     "  WARNING: WAL entries were already committed. Recovery relies on "

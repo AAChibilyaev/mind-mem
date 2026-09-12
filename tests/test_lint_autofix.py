@@ -444,36 +444,81 @@ class TestLintRepairsReachTheCorpus(unittest.TestCase):
         ok, message = self._stage_and_apply(DECISIONS_DUPLICATE_ONLY, RULE_DUPLICATE_BLOCK)
         self.assertTrue(ok, message)
 
-    @unittest.expectedFailure
     def test_a_missing_metadata_repair_applies(self):
-        """The rule whose repair the apply gate can never accept.
+        """The rule whose repair the apply gate could never accept.
 
         ``missing_metadata`` fires on an empty schema-required field, and
         ``_FIELD_DEFAULTS`` offers a repair for exactly two of them --
         ``Scope`` and ``Supersedes`` -- both in
-        ``DECISION_REQUIRED_FIELDS``. So the defect the repair targets is
+        ``DECISION_REQUIRED_FIELDS``. So the defect the repair targets was
         precisely what ``validate_py`` fails the corpus for, while
-        ``apply_proposal`` runs ``check_preconditions`` (validate +
-        intel_scan) BEFORE applying and refuses on any issue. Measured on
+        ``apply_proposal`` ran ``check_preconditions`` (validate +
+        intel_scan) BEFORE applying and refused on any issue. Measured on
         a real workspace:
 
             FAIL approve: Precondition check failed: validate: FAIL
             (37 checks | 36 passed | 1 issues) -- "Decisions: Scope:
             missing in 1/2 blocks"
+
+        The gate now compares the corpus before and after instead of
+        demanding zero, so a repair may start from the defect it repairs.
         """
         ok, message = self._stage_and_apply(DECISIONS, RULE_MISSING_METADATA)
         self.assertTrue(ok, message)
 
-    @unittest.expectedFailure
     def test_one_unfixable_defect_does_not_block_an_unrelated_repair(self):
-        """A validator-failing defect anywhere blocks every other repair.
+        """A validator-failing defect anywhere blocked every other repair.
 
-        The gate is corpus-wide, not proposal-scoped, so the empty
-        ``Scope`` on ``D-20260103-003`` in the shared fixture also blocks
+        The gate was corpus-wide, not proposal-scoped, so the empty
+        ``Scope`` on ``D-20260103-003`` in the shared fixture also blocked
         the unrelated ``stale_date`` repair on ``D-20260101-001`` -- which
         applies cleanly when it is the only defect present (see above).
         A corpus that has lint findings at all is the normal case for a
-        repair, so this is the broader half of the deadlock.
+        repair, so this was the broader half of the deadlock.
         """
         ok, message = self._stage_and_apply(DECISIONS, RULE_STALE_DATE)
         self.assertTrue(ok, message)
+
+    def test_an_apply_that_adds_a_defect_still_rolls_back(self):
+        """The safety property the old gate bought, kept without the deadlock.
+
+        Comparing instead of demanding zero must not become "anything
+        goes": an op that leaves the corpus worse than it found it has to
+        withdraw. Here the repair is staged normally and then the op is
+        swapped for one that blanks a required field, so the only
+        difference from the passing case above is the damage.
+        """
+        from unittest.mock import patch
+
+        from mind_mem.apply_engine import apply_proposal
+
+        ws = _make_ws(DECISIONS_STALE_ONLY, mode="governed")
+        finding = _by_rule(ws)[RULE_STALE_DATE]
+        proposal_id = lint_autofix(ws, finding.finding_id, now=FIXED_NOW)
+        decisions_path = os.path.join(ws, "decisions", "DECISIONS.md")
+
+        def _wreck(workspace, op, store=None):
+            with open(decisions_path, encoding="utf-8") as handle:
+                body = handle.read()
+            with open(decisions_path, "w", encoding="utf-8") as handle:
+                handle.write(body.replace("Scope: global", "Scope:"))
+            return True, "wrecked the corpus on purpose"
+
+        src_dir = os.path.dirname(os.path.dirname(os.path.abspath(mind_mem_file())))
+        prior = os.environ.get("PYTHONPATH", "")
+        os.environ["PYTHONPATH"] = src_dir if not prior else src_dir + os.pathsep + prior
+        os.environ["MIND_MEM_SCOPE"] = "admin"
+        try:
+            with patch("mind_mem.apply_engine.execute_op", _wreck):
+                ok, message = apply_proposal(ws, proposal_id)
+        finally:
+            os.environ.pop("MIND_MEM_SCOPE", None)
+            if prior:
+                os.environ["PYTHONPATH"] = prior
+            else:
+                os.environ.pop("PYTHONPATH", None)
+
+        self.assertFalse(ok, "an apply that introduces a defect must not stand")
+        self.assertEqual(message, "Post-checks failed, rolled back")
+        with open(decisions_path, encoding="utf-8") as handle:
+            self.assertIn("Scope: global", handle.read(), "the rollback must put the field back")
