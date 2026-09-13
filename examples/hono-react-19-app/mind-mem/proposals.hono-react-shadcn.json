@@ -293,7 +293,7 @@
       "block_type": "task",
       "content_source": "agent",
       "tags": "mind-mem, review, approve, hono, react19, shadcn",
-      "statement": "Ревью и approve_apply пакета proposals «hono-react-shadcn-knowledge-capture» (37 decisions + 2 tasks: правила владельца, TypeScript, Hono 4.12, React 19, shadcn/ui 4.21, SaaS, тесты/git/деплой, факты PR #5, ACL-finding); после применения — verify_chain, list_contradictions, propose_edge для связей schema→route→component.",
+      "statement": "Ревью и approve_apply пакета proposals «hono-react-shadcn-knowledge-capture» (38 decisions + 2 tasks: правила владельца, TypeScript, Hono 4.12, React 19, shadcn/ui 4.21, SaaS, тесты/git/деплой, факты PR #5, ACL-finding); после применения — verify_chain, list_contradictions, propose_edge для связей schema→route→component.",
       "rationale": "Proposals не становятся активными без человеческого ревью (D-20260913-027)."
     }
   ]

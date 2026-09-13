@@ -451,7 +451,7 @@ All memory records follow this structure:
 ## Proposal Batch (ready to replay)
 
 Everything this example teaches is already distilled into
-`mind-mem/proposals.hono-react-shadcn.json` — 37 `decision` + 2 `task`
+`mind-mem/proposals.hono-react-shadcn.json` — 38 `decision` + 2 `task`
 proposals in the exact argument shape of the `propose_update` MCP tool
 (owner rule, TypeScript, Hono 4.12, React 19, shadcn/ui 4.21, SaaS
 architecture, testing/git/deploy, PR #5 facts, mind-mem workflow).
