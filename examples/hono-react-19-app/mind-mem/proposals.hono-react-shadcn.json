@@ -1,0 +1,300 @@
+{
+  "schema": "mind-mem/propose_update-batch/v1",
+  "generated": "2026-09-13",
+  "source": "examples/hono-react-19-app — BEST-PRACTICES-CATALOG.md, MEMORY-INTEGRATION.md, AGENT-FINDINGS-SUMMARY.md, hono/react-best-practices/shadcn skills, session dialogs",
+  "replay": {
+    "mcp": "Each entry is the kwargs of the `propose_update` MCP tool (merge `defaults` first). The tool is ADMIN-scoped (src/mind_mem/mcp/infra/acl.py): the `mem` connector must run with MIND_MEM_SCOPE=admin.",
+    "grpc_http": "src/mind_mem/api/grpc_server.py maps operation \"propose\" -> mind_mem.mcp.tools.governance.propose_update with the same kwargs.",
+    "gates": "Every replay passes provenance policy, quality gate (advisory here), v4 field validation and the governance admission gate; statements land in intelligence/SIGNALS.md as [SIG-YYYYMMDD-###] and become active only after approve_apply."
+  },
+  "defaults": {
+    "confidence": "high",
+    "actor_id": "claude-code",
+    "actor_role": "agent",
+    "session_id": "session_014jzenVPZB5WMQZmhTJquJC",
+    "tool_id": "propose_update",
+    "purpose": "hono-react-shadcn-knowledge-capture"
+  },
+  "proposals": [
+    {
+      "block_type": "decision",
+      "content_source": "user",
+      "tags": "rule, owner-preference, typescript, kiss, dry",
+      "statement": "Правило владельца для всего TypeScript-кода: KISS, никаких «велосипедов» — использовать готовые библиотеки и их экспортируемые типы; дублировать код и типы запрещено.",
+      "rationale": "Озвучено владельцем в user_preferences и во всех диалогах 2026-09-13; совпадает с quarantined-импортом «AACSearch OS — Engineering and Agent Harness Rules» (KISS/DRY, official SDKs over custom)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "typescript, rule, strict",
+      "statement": "TypeScript strict: тип `any` запрещён — использовать `unknown` с type guards или явный интерфейс; `strict: true` в tsconfig обязателен.",
+      "rationale": "`any` отключает проверку типов и ломает end-to-end inference Hono/Zod; BEST-PRACTICES-CATALOG, TypeScript Rule 1 (Agent 6)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "typescript, zod, rule, single-source-of-truth",
+      "statement": "Типы выводятся из Zod-схем через `z.infer<typeof Schema>`; отдельный `type`/`interface` рядом со схемой — дублирование и запрещён. Zod-схема — единственный источник истины для request/response.",
+      "rationale": "Дублированный тип неизбежно расходится со схемой; одна схема питает zValidator на сервере и hc-клиент (hono skill: «#1 way Hono code drifts out of sync»)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "typescript, rule, generics, tsconfig",
+      "statement": "TypeScript: generics только с ограничением (`<T extends HasId>`), голый `<T>` — anti-pattern; discriminated unions предпочтительнее опциональных полей; `as const` для литеральных объектов; path aliases (@/, @server/, @client/, @types/) вместо относительных `../../`.",
+      "rationale": "Сводка TypeScript-правил 3–5 из BEST-PRACTICES-CATALOG и Agent 6; ограниченные generics дают реальную проверку, aliases убирают хрупкие пути."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "hono, versions, npm, fact",
+      "statement": "Hono версии (verified Aug 2026): hono 4.12.x (latest 4.12.33) актуальна; Hono v5 не существует, npm dist-tag `next` — старый RC, игнорировать. Спутники: @hono/node-server 2.0.x (v2, migration), @hono/zod-validator 0.9.x, @hono/zod-openapi 1.5.x (peer Zod 4), @hono/standard-validator 0.3.x, honox 0.1.x, @hono/vite-dev-server 0.26.x, @hono/mcp 0.3.x, @hono/otel 1.1.x.",
+      "rationale": "Версии из hono skill (Aug 2026) — защищает от установки устаревшего `next` RC и ожидания несуществующего v5; перед install проверять npm."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "hono, typescript, rule, env, bindings",
+      "statement": "Hono: `new Hono<Env>()` с `Env = { Bindings: {...}; Variables: {...} }` типизируется один раз на конструкторе — `c.env`, `c.get`/`c.set` и все middleware наследуют типы. Нетипизированный `new Hono()` с `any` в `c.env`/`c.get` — anti-pattern.",
+      "rationale": "Ядро type-safe паттерна Hono (skill + Agent 2); без Env-типа теряется весь end-to-end inference до RPC-клиента."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "hono, middleware, factory, rule",
+      "statement": "Hono middleware: переиспользуемые middleware — через `createFactory<Env>().createMiddleware(...)` (hono/factory); inline `app.use(async (c, next) => ...)` без типов не пишем. Один Hono-инстанс, sub-apps через `.route()`; второй роутер, DI-контейнер или state-manager поверх Hono не добавлять.",
+      "rationale": "Factory даёт типизированный `c.var`/`c.set` и композицию; лишние слои — «велосипед» (hono skill Anti-patterns; Agent 2 Pattern 2)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "hono, middleware, rule, no-velосипед",
+      "statement": "Hono: встроенные middleware из `hono/*` (cors, logger, secure-headers, jwt, cache, compress, etag, streaming) отдельно не устанавливаются; остальное — официальные `@hono/*` (oauth-providers, clerk-auth, auth-js, swagger-ui, otel, prometheus, trpc-server). Express-style body-parser/cors и самописные CORS/rate-limit/SSE запрещены.",
+      "rationale": "Hono покрывает это Web-Standard middleware; повторная реализация — «велосипед» (hono skill: reach for an official @hono/* package before writing middleware yourself)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "hono, zod, validation, rule",
+      "statement": "Hono валидация: каждый вход проходит `zValidator('json' | 'query' | 'param', Schema)` из @hono/zod-validator (или @hono/standard-validator для Valibot/ArkType); в хендлере `c.req.valid('json')` уже типизирован как `z.infer` — ручной парсинг тела и повторная проверка запрещены.",
+      "rationale": "Validator middleware связывает схему с типом хендлера и RPC-клиента; ручной `await c.req.json()` теряет тип (Agent 2 Pattern 3, hono skill references/validation.md)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "hono, errors, rule, observability",
+      "statement": "Hono ошибки: в хендлерах бросать `HTTPException(status, { message, cause })`; единый `app.onError` возвращает `err.getResponse()` для HTTPException и `{ error, requestId }` 500 для остального (message только в development). Raw `throw new Error` и `console.error` без requestId запрещены.",
+      "rationale": "Единый формат ошибок и requestId нужны для трассировки и стабильного контракта клиента (Agent 2 Pattern 5, hono skill testing-errors-structure)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "hono, rpc, hc, client, rule",
+      "statement": "Hono RPC: сервер экспортирует `export type AppType = typeof routes`, клиент — `hc<AppType>(baseUrl)` из hono/client: `client.api.todos.$get()`, `$post({ json })`, `[':id'].$put({ param, json })` типизированы автоматически. Ручные fetch-обёртки и отдельные типы ответов запрещены; тесты — `testClient(app)` из hono/testing.",
+      "rationale": "RPC даёт end-to-end типы без codegen — главная ценность Hono; fetch-wrapper руками — anti-pattern из hono skill."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "hono, scaffolding, runtime, deploy",
+      "statement": "Hono проекты создаются через `npm create hono@latest` с шаблоном под runtime (nodejs, cloudflare-workers, bun, deno, vercel, aws-lambda, x-basic для HonoX); bundling и адаптер руками не настраивать. Node: @hono/node-server `serve({ fetch: app.fetch, port })`; Workers: `export default app`.",
+      "rationale": "Шаблон подключает правильный адаптер и Vite-конфиг; ручная настройка — источник ошибок (hono skill Scaffolding, references/dev-and-build.md)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "react19, useTransition, rule, ux",
+      "statement": "React 19: мутации и неурочные обновления оборачиваются в `useTransition` / `startTransition(async () => ...)`; `isPending` заменяет ручной `loading` state; `useDeferredValue` для дорогих рендеров при вводе. Блокирующий `await` + `setState` прямо в обработчике — anti-pattern.",
+      "rationale": "Transitions держат UI отзывчивым и дают состояние загрузки бесплатно (Agent 1; react-best-practices rerender-transitions, rendering-usetransition-loading)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "react19, suspense, use, server-components, rule",
+      "statement": "React 19: `Suspense` — граница async-данных (стриминг), `use()` читает promise/context в рендере, form actions (`<form action>`, `useActionState`, `useOptimistic`) для мутаций; Server Components для data fetching и Server Actions для мутаций там, где есть RSC-фреймворк, при этом Server Actions аутентифицируются как API-роуты.",
+      "rationale": "Примитивы React 19 заменяют useEffect-fetching и ручные loading/error флаги (Agent 1; react-best-practices async-suspense-boundaries, server-auth-actions)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "react19, state, hooks, rule, kiss",
+      "statement": "React state: серверные данные живут в custom hooks (`useTodos`) поверх типизированного hc-клиента или SWR/TanStack Query (дедупликация запросов); Redux/Zustand/глобальный Context не добавлять без доказанной необходимости; scope Context минимальный; state, нужный только в callback, читать без подписки (refs).",
+      "rationale": "Custom hook + типизированный клиент покрывают CRUD без state-manager (Agent 1/6; react-best-practices client-swr-dedup, rerender-defer-reads)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "react19, rerender, performance, rule",
+      "statement": "React рендер-правила: компоненты не объявлять внутри компонентов; статический JSX выносить наружу; условный рендер тернарником, не `&&`; `useMemo`/`memo` только по измеренной проблеме (React Compiler в React 19 мемоизирует сам); functional `setState`; primitive dependencies в effects; логика взаимодействия в event handlers, а не в effects.",
+      "rationale": "Сводка Vercel react-best-practices категорий rerender-* и rendering-* + Agent 6 React rules."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "react19, nextjs, performance, waterfalls, bundle, rule",
+      "statement": "React/Next performance приоритеты (Vercel): 1) waterfalls — `Promise.all` для независимых await, await откладывать в ветку использования, Suspense для стриминга; 2) bundle — прямые импорты вместо barrel files, dynamic import для тяжёлых компонентов, аналитика после hydration, preload на hover; 3) сервер — `React.cache()` per-request, LRU cross-request, минимум данных в RSC props, `after()`.",
+      "rationale": "Категории CRITICAL/HIGH из react-best-practices (async-*, bundle-*, server-*); применимы к любому React 19 проекту."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "shadcn, forms, field, rule, a11y",
+      "statement": "shadcn/ui формы: layout только `FieldGroup` → `Field` → `FieldLabel` / контрол / `FieldDescription`; raw `div` со `space-y-*` или `grid gap-*` для форм запрещён. В `InputGroup` — `InputGroupInput`/`InputGroupTextarea` + `InputGroupAddon`; наборы из 2–7 вариантов — `ToggleGroup`; группы чекбоксов/радио — `FieldSet` + `FieldLegend`.",
+      "rationale": "Critical Rule 1 shadcn skill (rules/forms.md) — доступность и единый spacing форм без ручной вёрстки."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "shadcn, validation, a11y, rule",
+      "statement": "shadcn/ui валидация и состояния: `data-invalid` на `Field` + `aria-invalid` на контроле; disabled — `data-disabled` на `Field` + `disabled` на контроле; текст ошибки в `FieldDescription`. Ручной `className=\"border-red-500\"` для ошибок запрещён.",
+      "rationale": "Critical Rule 5 shadcn skill — структурированное состояние читается и стилями, и screen reader."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "shadcn, tailwind, styling, rule",
+      "statement": "shadcn/ui styling: spacing только `flex`/`grid` + `gap-*` (вертикально `flex flex-col gap-*`), `space-y-*`/`space-x-*` запрещены; `size-*` вместо `w-* h-*`; `truncate` вместо трёх утилит; `className` только для layout — цвета и типографику компонента не переопределять; условные классы через `cn()`; ручной `z-index` на Dialog/Sheet/Popover не ставить.",
+      "rationale": "Critical Rules shadcn skill (rules/styling.md) — компоненты сами управляют внешним видом и стекингом."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "shadcn, tailwind, colors, theming, rule",
+      "statement": "shadcn/ui цвета: только семантические токены (`bg-primary`, `bg-background`, `text-muted-foreground`, `text-destructive`) и варианты компонентов (`variant=\"outline\"`, `<Badge variant=\"secondary\">`); raw `bg-blue-500`/`text-emerald-600` и ручные `dark:` overrides запрещены — темы решаются токенами.",
+      "rationale": "Critical Rule 3 shadcn skill — семантические токены дают light/dark и брендинг из одного места (customization.md)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "shadcn, icons, rule",
+      "statement": "shadcn/ui иконки: внутри `Button` — `data-icon=\"inline-start\"` / `\"inline-end\"`; size-классы (`size-4`, `w-4 h-4 mr-2`) на иконках внутри компонентов запрещены — размер задаёт компонент; иконки передаются объектами (`icon={CheckIcon}`), не строками; библиотека берётся из `iconLibrary` в components.json (не предполагать lucide-react).",
+      "rationale": "Critical Rules shadcn skill (rules/icons.md) + Key Fields — единый размер и правильный import под проект."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "shadcn, composition, a11y, rule",
+      "statement": "shadcn/ui composition: Items только внутри своей Group (SelectItem→SelectGroup, DropdownMenuItem→DropdownMenuGroup, CommandItem→CommandGroup); Dialog/Sheet/Drawer обязательно с Title (`sr-only`, если скрыт); TabsTrigger только в TabsList; Avatar с AvatarFallback; Card — полная композиция Header/Title/Description/Content/Footer; кастомные триггеры через `asChild` (radix) или `render` (base).",
+      "rationale": "Critical Rules shadcn skill (rules/composition.md, base-vs-radix.md) — нарушения ломают a11y и keyboard navigation; поле `base` смотреть в `npx shadcn@latest info`."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "shadcn, components, kiss, rule",
+      "statement": "shadcn/ui: готовые компоненты вместо кастомной разметки — `Alert` для callouts, `Empty` для пустых состояний, `Skeleton` для загрузки (не `animate-pulse` div), `Separator` вместо `<hr>`, `Badge` вместо styled span, `toast()` из sonner, `Spinner` + `data-icon` + `disabled` для loading-кнопки (у Button нет isLoading). Перед новым UI — `npx shadcn@latest search`, включая community registries.",
+      "rationale": "Principles 1–2 shadcn skill: use existing components first, compose don't reinvent — правило «без велосипедов» для UI."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "shadcn, cli, workflow, rule",
+      "statement": "shadcn CLI 4.21: `npx shadcn@latest info` (aliases, base, iconLibrary, tailwindVersion, rsc) → `search` → `docs <component>` (fetch URLs) → `add`; обновления через `add --dry-run` и `--diff <file>`, `--overwrite` только с явного согласия; registry для блока указывать явно, не угадывать; preset-коды не декодировать вручную (`preset decode/resolve/apply`); сырые файлы с GitHub не тянуть; после community registry проверить import-пути под aliases.",
+      "rationale": "Разделы CLI / Workflow / Updating Components shadcn skill — защищают локальные правки компонентов и согласованность конфигурации."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "saas, multi-tenancy, security, rule",
+      "statement": "SaaS multi-tenancy: каждый запрос к БД содержит фильтр `tenant_id` (плюс Postgres RLS); `tenantId` кладётся в Hono `Variables` middleware-ом из subdomain/header; горизонтальное масштабирование через consistent hashing; фоновые задачи идемпотентны.",
+      "rationale": "Agent 4 SaaS Architecture, категория 1 — утечка данных между тенантами является самым дорогим классом ошибок SaaS."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "saas, auth, jwt, rbac, security, rule",
+      "statement": "SaaS auth: JWT подписывать только RS256 (HS256 запрещён); OAuth 2.0/OIDC через @hono/oauth-providers, @hono/clerk-auth или @hono/auth-js; RBAC-проверки только на backend (frontend — лишь отображение); API-ключи хранить хэшированными (bcrypt/Argon2id) с ротацией.",
+      "rationale": "Agent 4 категория 2 (Authentication & Authorization) — симметричный HS256 и frontend-only permissions являются типовыми уязвимостями."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "saas, payments, stripe, billing, rule",
+      "statement": "SaaS payments/licensing: Stripe webhooks обрабатываются идемпотентно (dedup по event id), подпись проверяется; usage-based billing с soft cap (предупреждение) и hard cap (отказ); лицензионные ключи — подписанные JWT; feature entitlements — отдельная таблица, не флаги в коде.",
+      "rationale": "Agent 4 категория 3 (Payments & Licensing) — повторные webhook-доставки без идемпотентности ведут к двойным списаниям."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "saas, audit, compliance, gdpr, encryption, rule",
+      "statement": "SaaS audit & compliance: audit log append-only (CHECK constraints, без UPDATE/DELETE), экспорт с цифровой подписью; GDPR-удаление с 30-дневным grace period; данные at-rest AES-256-GCM, пароли Argon2id; structured JSON-логи содержат request_id и tenant_id.",
+      "rationale": "Agent 4 категории 4–5 (Audit & Compliance, Observability) — неизменяемый журнал и корреляция по request_id обязательны для аудита."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "saas, observability, otel, metrics, rule",
+      "statement": "SaaS observability: RED-метрики (rate, errors, duration) через @hono/prometheus; distributed tracing OpenTelemetry через @hono/otel; `/health` endpoint с checks (database, cache) и версией; alert escalation policies. Логи без requestId и tenantId не принимаются.",
+      "rationale": "Agent 4 категория 5 (Observability) + раздел Deployment & Operations каталога — без RED/tracing инциденты не диагностируются."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "saas, security, reliability, rate-limit, rule",
+      "statement": "SaaS security & reliability: rate limiting по IP, tenant и API key; CORS allowlist + CSRF защита; SQL только параметризованный; секреты в secrets manager, не в env-файлах репо; circuit breaker + retry с exponential backoff и jitter; graceful degradation; backups 3-2-1; graceful shutdown по SIGTERM (drain in-flight, close DB).",
+      "rationale": "Agent 4 категории 6–7 (Security, Reliability) + раздел Deployment каталога."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "saas, performance, api-design, openapi, sdk, rule",
+      "statement": "SaaS performance & DX: кэш L1 in-memory → L2 Redis → L3 CDN → L4 DB, индексы на FK, лимиты запросов, защита от N+1; API версионируется с первого дня (`/api/v1`), устаревшие роуты отдают `Deprecation`/`Sunset`; единый формат ошибок; OpenAPI через @hono/zod-openapi + Scalar, SDK генерируются из спецификации, не пишутся руками; исходящие webhooks подписаны, идемпотентны, с retry.",
+      "rationale": "Agent 4 категории 8–9 (Performance, Developer Experience) + Agent 6 API design / Database rules."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "testing, vitest, hono, database, rule",
+      "statement": "Тестирование: unit для бизнес-логики, integration для workflows, E2E для ключевых user journeys; цель покрытия 70%+ (не 100%); Hono тестируется через `testClient(app)` из hono/testing, фронтенд — Vitest + Testing Library; схемы БД только через миграции, multi-step операции в транзакциях.",
+      "rationale": "Agent 6 Testing Requirements + Database Patterns — прагматичный уровень покрытия и воспроизводимые схемы."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "external",
+      "tags": "git, deploy, documentation, rule",
+      "statement": "Git и деплой: атомарные коммиты с conventional commit messages, обязательный code review; миграции выкатываются до кода; blue-green или canary деплой с автоматическим rollback и deployment checklist; комментарии в коде объясняют «почему», не «что»; API-документация и README с ответами на частые вопросы обязательны.",
+      "rationale": "Agent 6 Git & Commit Conventions, Deployment Patterns, Documentation Rules."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "agent",
+      "tags": "mind-mem, project, pr, hono, react19, shadcn, scope",
+      "statement": "В AAChibilyaev/mind-mem добавлен examples/hono-react-19-app (PR #5, ветка claude/hono-react-19-setup-wyb365): эталон Hono 4.12 + React 19 + shadcn/ui 4.21 + Zod с каталогом правил (BEST-PRACTICES-CATALOG.md, MEMORY-INTEGRATION.md, AGENT-FINDINGS-SUMMARY.md, AGENT-5-VERIFICATION.md). Это референс паттернов для mind-mem, не продукт: Phase 2 (DB/Auth/Stripe) не планируется.",
+      "rationale": "Владелец 2026-09-13: «улучшаешь только проект mind mem» — пример нужен как источник знаний для памяти, а не как приложение для развития."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "agent",
+      "tags": "mind-mem, example, schema, routes, zod, hono",
+      "statement": "Контракт examples/hono-react-19-app: CreateTodoSchema {title 1..200, description?, completed=false}; TodoSchema = CreateTodoSchema.extend({id uuid, createdAt, updatedAt}); UserSchema {id uuid, email, name, createdAt}; Env.Bindings {VERSION, API_KEY?}, Env.Variables {userId?, startTime, requestId}. Маршруты: GET/POST /api/todos, GET/PUT(partial)/DELETE /api/todos/:id, GET /api/me (401 без userId); клиент `hc<AppType>`, hook `useTodos`, `TodoList` с useTransition.",
+      "rationale": "Единственный источник истины контракта примера, чтобы recall/verify_chain сверяли документацию с кодом (задачи #3–#4 Phase 1)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "agent",
+      "tags": "mind-mem, workflow, governance, rule",
+      "statement": "Workflow разработки с mind-mem: перед задачей — `recall` паттернов; новые правила/схемы/маршруты — `propose_update` (decision, rationale обязателен, content_source указан); применение только человеком через `approve_apply`; еженедельно `verify_chain` + `list_contradictions`; перед рефакторингом `traverse_graph`/`block_lineage` и `export_memory` снапшот; связи schema→validator→route→component — через `propose_edge`/`add_block_edge`.",
+      "rationale": "Agent 5 Integration Plan (MEMORY-INTEGRATION.md: 3 workflows, tool priority tiers) + правило D-20260913-027 (долгосрочные записи только через proposals)."
+    },
+    {
+      "block_type": "decision",
+      "content_source": "agent",
+      "tags": "mind-mem, acl, mcp, scope, finding",
+      "statement": "MCP-коннектор mem в Claude Code работает в user-scope: все write-инструменты (propose_update, staged_change, entity_add_observation, graph_add_edge, reindex, verify_chain, export_memory) отвечают «requires admin scope». Для записи знаний из сессий коннектор должен запускаться с MIND_MEM_SCOPE=admin; в user-scope доступны только propose_edge, observe_signal, report_outcome, vault_sync.",
+      "rationale": "Обнаружено 2026-09-13 при попытке загрузить 38 proposals: src/mind_mem/mcp/infra/acl.py ADMIN_TOOLS/USER_TOOLS; без admin-scope весь workflow «recall → propose → approve» вырождается в read-only."
+    },
+    {
+      "block_type": "task",
+      "content_source": "agent",
+      "tags": "mind-mem, maintenance, reindex, signals",
+      "statement": "mind-mem maintenance: разобрать 835 pending signals (apply/reject), проверить 1 drift item в intelligence/DRIFT.md и пересобрать FTS-индекс (1 stale file) — `reindex` требует MIND_MEM_SCOPE=admin, из user-коннектора недоступен.",
+      "rationale": "memory_health 2026-09-13: score needs_attention; user-scope MCP не может выполнить reindex."
+    },
+    {
+      "block_type": "task",
+      "content_source": "agent",
+      "tags": "mind-mem, review, approve, hono, react19, shadcn",
+      "statement": "Ревью и approve_apply пакета proposals «hono-react-shadcn-knowledge-capture» (38 decisions + 2 tasks: правила владельца, TypeScript, Hono 4.12, React 19, shadcn/ui 4.21, SaaS, тесты/git/деплой, факты PR #5, ACL-finding); после применения — verify_chain, list_contradictions, propose_edge для связей schema→route→component.",
+      "rationale": "Proposals не становятся активными без человеческого ревью (D-20260913-027)."
+    }
+  ]
+}
