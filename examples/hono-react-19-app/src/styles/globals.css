@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base layer customizations */
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'rounding-mode' auto;
+  }
+
+  code {
+    @apply font-mono text-sm;
+  }
+}
+
+/* Component layer utilities */
+@layer components {
+  .container {
+    @apply w-full px-4 md:px-6 mx-auto;
+  }
+
+  .prose {
+    @apply text-base leading-relaxed;
+  }
+}
