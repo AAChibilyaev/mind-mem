@@ -141,13 +141,13 @@ def graph_expand(
         return results
 
     from ._recall_scoring import build_xref_graph
-    from .admissibility import admit_corpus
+    from .admissibility import admit_corpus, withhold_signals
 
     # Only admissible blocks are resolvable. This walk appends raw corpus
     # blocks straight into the result list, so a withheld block reachable
     # here is a withheld block served — filtering the corpus is what makes
     # it unreachable rather than merely unwanted.
-    all_blocks = admit_corpus(all_blocks)
+    all_blocks = withhold_signals(admit_corpus(all_blocks), leg="graph")
 
     id_to_block: dict[str, dict] = {str(b.get("_id")): b for b in all_blocks if b.get("_id")}
     if not id_to_block:

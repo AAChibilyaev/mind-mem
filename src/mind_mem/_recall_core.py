@@ -553,6 +553,11 @@ def _withhold_inadmissible(
             items = with_live_statuses(items, live_statuses(workspace), status_key=status_key)
         except Exception as exc:  # pragma: no cover — defensive
             _log.warning("live_status_refresh_failed", error=str(exc))
+    # Signals are the review queue, not memory: withheld by id whatever
+    # review set their status to. See ``admissibility.withhold_signals``.
+    from .admissibility import withhold_signals
+
+    items = withhold_signals(items, allow=allow, leg=leg)
     if all(is_admissible_status(item.get(status_key)) for item in items):
         return items
     releases: frozenset[str] = frozenset()
@@ -1396,6 +1401,9 @@ def recall(
     # ``include_pending`` stays a caller-scoped widening of exactly that.
     _pre_admission = len(all_blocks)
     all_blocks = admit_corpus(all_blocks, allow=_admission_allow)
+    from .admissibility import withhold_signals
+
+    all_blocks = withhold_signals(all_blocks, allow=_admission_allow, leg="corpus")
     _stage_counts["withheld"] = _pre_admission - len(all_blocks)
 
     # The scan leg's push-down: the five filters decide the CANDIDATE POOL,

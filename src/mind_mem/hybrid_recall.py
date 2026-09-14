@@ -1487,6 +1487,10 @@ class HybridBackend:
         if overrides is None:
             overrides = live_statuses(workspace)
         hits = with_live_statuses(hits, overrides)
+        # Before fusion, so a triaged signal cannot take a leg's pool slot.
+        from .admissibility import withhold_signals
+
+        hits = withhold_signals(hits, leg=leg.value)
         if all(is_admissible_status(hit.get("status")) for hit in hits):
             return hits
         try:
@@ -1531,7 +1535,9 @@ class HybridBackend:
             # again on its own corpus argument — this is not redundancy, it
             # is the same rule enforced at the point of use so a caller that
             # loads its own corpus cannot bypass it.
-            return admit_corpus(blocks)
+            from .admissibility import withhold_signals
+
+            return withhold_signals(admit_corpus(blocks), leg="corpus")
         except Exception as exc:  # pragma: no cover
             _log.warning("corpus_load_failed", error=str(exc))
             return None
