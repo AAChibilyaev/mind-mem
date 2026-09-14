@@ -77,15 +77,19 @@ __all__ = [
     "UNADMITTED",
     "UNREADABLE_STATUS",
     "RELEASE_FIELD",
+    "CLOSED_SIGNAL_STATUSES",
+    "SIGNAL_ID_PREFIX",
     "admissible",
     "admit_corpus",
     "admit_leg",
     "count_unresolved",
     "is_admissible_status",
+    "is_signal_id",
     "live_statuses",
     "release_ids",
     "unresolved_count",
     "with_live_statuses",
+    "withhold_signals",
     "workspace_release_ids",
 ]
 
@@ -354,6 +358,66 @@ def admit_leg(
         _log.info("recall_withheld", leg=leg or "?", withheld=len(hits) - len(kept))
         metrics.inc("recall_withheld_candidates", len(hits) - len(kept))
     return kept
+
+
+#: Id prefix of the review queue (``intelligence/SIGNALS.md``).
+SIGNAL_ID_PREFIX: Final[str] = "SIG-"
+
+
+def is_signal_id(block_id: object) -> bool:
+    """True when *block_id* names a signal — a proposal, not memory."""
+    return isinstance(block_id, str) and block_id.startswith(SIGNAL_ID_PREFIX)
+
+
+#: Review-queue outcomes that close a signal without making it memory.
+#: ``active`` is absent on purpose: an approved relation signal is served.
+CLOSED_SIGNAL_STATUSES: Final[frozenset[str]] = frozenset({"resolved", "rejected"})
+
+
+def withhold_signals(
+    items: Sequence[Mapping[str, Any]],
+    *,
+    allow: frozenset[str] = frozenset(),
+    leg: str | None = None,
+) -> list[dict]:
+    """Drop reviewed-and-closed signals from a **recall** candidate set.
+
+    A signal is an entry in the review queue: a claim someone proposed,
+    waiting for — or already past — review. The status allow-list withholds
+    it while it is ``pending``, but review moves it to ``resolved`` or
+    ``rejected``, both of which recall recognises, so every triaged signal
+    would start competing with the decision, task or entity it was turned
+    into (or with nothing, when it was rejected). Measured on a live
+    workspace: resolving 876 signals put 8 of them into the top-10 of a
+    20-query golden set and dropped MRR from 0.8125 to 0.7292, with the
+    formalized blocks unchanged.
+
+    So recall withholds a signal whose review *closed* it
+    (:data:`CLOSED_SIGNAL_STATUSES`). A signal approved through the governed
+    path is ``active`` and stays servable — that is memory the review
+    admitted — and a ``pending`` one is already withheld by the status rule.
+    The one caller-scoped widening is the one that already exists for
+    signals: ``recall(include_pending=True)`` passes ``allow={"pending"}``,
+    and an operator who asked to see the queue sees all of it.
+
+    Read surfaces (``get_block``, resources, ``/memories``, export) do not
+    call this: reading a named signal, or listing the reviewed queue, stays
+    possible. Only ranking is affected.
+    """
+    if "pending" in allow:
+        return [dict(item) for item in items]
+    kept = [dict(item) for item in items if not _is_closed_signal(item)]
+    if len(kept) != len(items):
+        _log.info("recall_withheld_signals", leg=leg or "?", withheld=len(items) - len(kept))
+        metrics.inc("recall_withheld_signal_candidates", len(items) - len(kept))
+    return kept
+
+
+def _is_closed_signal(item: Mapping[str, Any]) -> bool:
+    if not is_signal_id(item.get("_id")):
+        return False
+    status = item.get("status", item.get("Status"))
+    return isinstance(status, str) and status.strip().lower() in CLOSED_SIGNAL_STATUSES
 
 
 def count_unresolved(n: int = 1) -> None:

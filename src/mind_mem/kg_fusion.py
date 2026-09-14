@@ -161,7 +161,9 @@ def kg_expand(
 
     # Same rule as the cross-reference walk: this leg appends raw corpus
     # blocks, so only admissible ones may be resolvable from an edge.
-    corpus = admit_corpus(corpus)
+    from .admissibility import withhold_signals
+
+    corpus = withhold_signals(admit_corpus(corpus), leg="kg")
     id_to_block = {str(b.get("_id")): b for b in corpus if b.get("_id")}
     if not id_to_block:
         return results

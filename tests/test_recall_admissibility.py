@@ -583,6 +583,67 @@ def test_include_pending_survives_the_funnel_as_well_as_the_corpus_filter(tmp_pa
     assert "SIG-20260829-001" in _served_ids(recall(ws, QUERY, limit=10, include_pending=True))
 
 
+# ---------------------------------------------------------------------------
+# Signals are the review queue, not memory
+# ---------------------------------------------------------------------------
+
+REVIEWED_SIGNAL = "SIG-20260829-002"
+
+
+@pytest.mark.parametrize("status", ["resolved", "rejected"])
+def test_a_reviewed_signal_is_not_recall_content(status: str, tmp_path: Any) -> None:
+    """Review moves a signal to a recognised status; recall must still skip it.
+
+    The positive control is the seed decision: it matches the same query and
+    is served, so an empty answer cannot pass for the wrong reason.
+    """
+    ws = _new_ws(tmp_path, f"reviewed-{status}")
+    _write(ws, "decisions/DECISIONS.md", _block(SEED, f"The {QUERY} decision", "active"))
+    _write(ws, "intelligence/SIGNALS.md", _block(REVIEWED_SIGNAL, f"{QUERY} {QUERY} reviewed signal", status))
+    _config(ws)
+
+    served = _served_ids(recall(ws, QUERY, limit=10))
+    assert SEED in served
+    assert REVIEWED_SIGNAL not in served
+    assert REVIEWED_SIGNAL in _served_ids(recall(ws, QUERY, limit=10, include_pending=True))
+
+
+def test_both_hybrid_legs_withhold_a_reviewed_signal(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Withheld before fusion on the lexical leg and on the vector leg."""
+    ws = _new_ws(tmp_path, "reviewed-hybrid")
+    _write(ws, "decisions/DECISIONS.md", _block(SEED, f"The {QUERY} decision", "active"))
+    _write(ws, "intelligence/SIGNALS.md", _block(REVIEWED_SIGNAL, f"{QUERY} {QUERY} reviewed signal", "resolved"))
+    cfg = _config(ws)
+    build_index(ws)
+    backend = HybridBackend(config=cfg)
+    monkeypatch.setattr(backend, "_vector_search", lambda *a, **k: [{"_id": REVIEWED_SIGNAL, "score": 0.99, "status": "resolved"}])
+
+    served = _served_ids(backend.search(QUERY, ws, limit=10))
+    assert SEED in served
+    assert REVIEWED_SIGNAL not in served
+
+
+def test_a_reviewed_signal_stays_readable_on_read_surfaces(tmp_path: Any) -> None:
+    """Only ranking changes: a named signal is still readable."""
+    from mind_mem.admission import admit_read
+
+    ws = _new_ws(tmp_path, "reviewed-read")
+    _write(ws, "intelligence/SIGNALS.md", _block(REVIEWED_SIGNAL, "reviewed signal", "resolved"))
+    decision = admit_read([{"_id": REVIEWED_SIGNAL, "Status": "resolved"}], workspace=ws, surface="test")
+    assert [r["_id"] for r in decision.admitted] == [REVIEWED_SIGNAL]
+    assert decision.withheld == 0
+
+
+def test_withhold_signals_is_closed_signals_only_and_widened_by_include_pending() -> None:
+    from mind_mem.admissibility import is_signal_id, withhold_signals
+
+    items = [{"_id": SEED, "status": "active"}, {"_id": REVIEWED_SIGNAL, "status": "resolved"}, {"_id": "SIG-x", "Status": "active"}]
+    # An approved (active) signal is memory; only a closed one is withheld.
+    assert [i["_id"] for i in withhold_signals(items)] == [SEED, "SIG-x"]
+    assert [i["_id"] for i in withhold_signals(items, allow=frozenset({"pending"}))] == [SEED, REVIEWED_SIGNAL, "SIG-x"]
+    assert is_signal_id(REVIEWED_SIGNAL) and not is_signal_id(SEED) and not is_signal_id(None)
+
+
 def test_the_scoring_path_has_no_import_edge_to_the_importer() -> None:
     """The by-construction form of the cost claim.
 

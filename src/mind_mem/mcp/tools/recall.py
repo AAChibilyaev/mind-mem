@@ -1362,10 +1362,10 @@ def _kind_neighbours(ws: str, block_id: str, kind: str, limit: int) -> dict | No
         _log.warning("find_similar_kind_leg_failed", block_id=block_id, kind=kind, error=str(exc))
         return None
 
-    from mind_mem.admissibility import admissible
+    from mind_mem.admissibility import admissible, is_signal_id
     from mind_mem.storage import iter_blocks
 
-    servable = admissible(iter_blocks(ws, active_only=False))
+    servable = frozenset(bid for bid in admissible(iter_blocks(ws, active_only=False)) if not is_signal_id(bid))
     similar = [{"block_id": bid, "distance": round(dist, 6)} for bid, dist in hits if bid != block_id and bid in servable][:limit]
     metrics.inc("mcp_find_similar_kind_queries")
     return {
